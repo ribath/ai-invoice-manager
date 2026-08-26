@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  mock-api:
+    build:
+      context: ./mock-api
+      dockerfile: Dockerfile
+    container_name: invoice-mock-api
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: invoice-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MOCK_API_URL=http://mock-api:8080
+      - MOCK_API_KEY=demo-key-1234
+    depends_on:
+      - mock-api
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: invoice-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=http://localhost:3001
+    depends_on:
+      - backend
+    restart: unless-stopped
