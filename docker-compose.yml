@@ -16,11 +16,13 @@ services:
       dockerfile: Dockerfile
     container_name: invoice-backend
     ports:
-      - "3001:3001"
+      - "${PORT:-3001}:${PORT:-3001}"
+    env_file:
+      - ./backend/.env
     environment:
-      - PORT=3001
+      - PORT=${PORT:-3001}
       - MOCK_API_URL=http://mock-api:8080
-      - MOCK_API_KEY=demo-key-1234
+      - MOCK_API_KEY=${MOCK_API_KEY:-demo-key-1234}
     depends_on:
       - mock-api
     restart: unless-stopped
@@ -31,9 +33,11 @@ services:
       dockerfile: Dockerfile
     container_name: invoice-frontend
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
+    env_file:
+      - ./frontend/.env
     environment:
-      - PORT=3000
+      - PORT=${PORT:-3000}
       - NEXT_PUBLIC_API_URL=http://localhost:3001
     depends_on:
       - backend
