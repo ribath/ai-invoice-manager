@@ -8,12 +8,14 @@ services:
     container_name: invoice-mock-api
     ports:
       - "8080:8080"
+    volumes:
+      - ./mock-api:/app
     restart: unless-stopped
 
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: invoice-backend
     ports:
       - "${PORT:-3001}:${PORT:-3001}"
@@ -23,6 +25,10 @@ services:
       - PORT=${PORT:-3001}
       - MOCK_API_URL=http://mock-api:8080
       - MOCK_API_KEY=${MOCK_API_KEY:-demo-key-1234}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - /app/dist
     depends_on:
       - mock-api
     restart: unless-stopped
@@ -30,7 +36,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: invoice-frontend
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
@@ -39,6 +45,11 @@ services:
     environment:
       - PORT=${PORT:-3000}
       - NEXT_PUBLIC_API_URL=http://localhost:3001
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
     depends_on:
       - backend
     restart: unless-stopped
