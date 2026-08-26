@@ -1,6 +1,24 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: invoice-postgres
+    ports:
+      - "3002:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=invoice_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d invoice_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   mock-api:
     build:
       context: ./mock-api
@@ -25,12 +43,20 @@ services:
       - PORT=${PORT:-3001}
       - MOCK_API_URL=http://mock-api:8080
       - MOCK_API_KEY=${MOCK_API_KEY:-demo-key-1234}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=invoice_db
     volumes:
       - ./backend:/app
       - /app/node_modules
       - /app/dist
     depends_on:
-      - mock-api
+      postgres:
+        condition: service_healthy
+      mock-api:
+        condition: service_started
     restart: unless-stopped
 
   frontend:
@@ -53,3 +79,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  postgres_data:
