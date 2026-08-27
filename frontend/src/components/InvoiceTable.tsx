@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   ExternalLink,
@@ -46,14 +46,48 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
 
   const safeInvoices = Array.isArray(invoices) ? invoices : [];
 
+  // Match invoice numbers across all items to detect duplicates
+  const duplicateInvoiceNumbers = useMemo(() => {
+    const counts: Record<string, number> = {};
+    safeInvoices.forEach((inv) => {
+      const invNo = (
+        inv.invoiceNumber ||
+        inv.extractedData?.invoice_number ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
+      if (invNo) {
+        counts[invNo] = (counts[invNo] || 0) + 1;
+      }
+    });
+    const dupes = new Set<string>();
+    Object.entries(counts).forEach(([no, count]) => {
+      if (count > 1) {
+        dupes.add(no);
+      }
+    });
+    return dupes;
+  }, [safeInvoices]);
+
   const filteredInvoices = safeInvoices.filter((inv) => {
+    const invNo = (
+      inv.invoiceNumber ||
+      inv.extractedData?.invoice_number ||
+      ''
+    )
+      .trim()
+      .toLowerCase();
+    const isDuplicate = invNo !== '' && duplicateInvoiceNumbers.has(invNo);
+
     // Tab filtering
     if (filterTab === 'extracted' && inv.status !== 'EXTRACTED') return false;
     if (filterTab === 'registered' && inv.status !== 'REGISTERED') return false;
     if (
       filterTab === 'issues' &&
       inv.status !== 'EXTRACTION_FAILED' &&
-      inv.status !== 'REGISTRATION_FAILED'
+      inv.status !== 'REGISTRATION_FAILED' &&
+      !isDuplicate
     )
       return false;
 
@@ -82,7 +116,21 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
     return true;
   });
 
-  const getStatusBadge = (status: InvoiceRecord['status']) => {
+  const getStatusBadge = (
+    status: InvoiceRecord['status'],
+    isDuplicate: boolean,
+  ) => {
+    if (isDuplicate && status !== 'REGISTERED') {
+      return (
+        <span
+          className="badge badge-danger"
+          title="Duplicate invoice number detected across invoices"
+        >
+          <AlertTriangle size={12} />
+          Duplicate Invoice
+        </span>
+      );
+    }
     switch (status) {
       case 'EXTRACTED':
         return (
@@ -149,11 +197,24 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
           >
             Issues (
             {
-              safeInvoices.filter(
-                (i) =>
+              safeInvoices.filter((i) => {
+                const invNo = (
+                  i.invoiceNumber ||
+                  i.extractedData?.invoice_number ||
+                  ''
+                )
+                  .trim()
+                  .toLowerCase();
+                const isDupe =
+                  invNo !== '' &&
+                  duplicateInvoiceNumbers.has(invNo) &&
+                  i.status !== 'REGISTERED';
+                return (
                   i.status === 'EXTRACTION_FAILED' ||
-                  i.status === 'REGISTRATION_FAILED',
-              ).length
+                  i.status === 'REGISTRATION_FAILED' ||
+                  isDupe
+                );
+              }).length
             }
             )
           </button>
@@ -214,11 +275,25 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                 const totalAmount =
                   inv.totalAmount ?? inv.extractedData?.total_amount;
 
+                const cleanInvNo = (
+                  inv.invoiceNumber ||
+                  inv.extractedData?.invoice_number ||
+                  ''
+                )
+                  .trim()
+                  .toLowerCase();
+                const isDuplicate =
+                  cleanInvNo !== '' && duplicateInvoiceNumbers.has(cleanInvNo);
+
                 return (
                   <tr
                     key={inv.id}
                     className={`table-row ${
-                      inv.status === 'EXTRACTED' ? 'row-highlight' : ''
+                      inv.status === 'EXTRACTED' && !isDuplicate
+                        ? 'row-highlight'
+                        : isDuplicate && inv.status !== 'REGISTERED'
+                        ? 'row-warning'
+                        : ''
                     }`}
                   >
                     <td>
@@ -255,7 +330,7 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                           : '—'}
                       </span>
                     </td>
-                    <td>{getStatusBadge(inv.status)}</td>
+                    <td>{getStatusBadge(inv.status, isDuplicate)}</td>
                     <td>
                       {inv.accountingId ? (
                         <span className="accounting-id-tag">
@@ -267,7 +342,7 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                     </td>
                     <td className="text-right">
                       <div className="action-buttons">
-                        {inv.status === 'EXTRACTED' ? (
+                        {inv.status === 'EXTRACTED' && !isDuplicate ? (
                           <button
                             className="btn btn-sm btn-primary"
                             onClick={() => onSelectInvoice(inv.id)}
@@ -275,23 +350,42 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                             <FileCheck size={14} />
                             <span>Review & Register</span>
                           </button>
-                        ) : inv.status === 'EXTRACTION_FAILED' ? (
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => handleReExtractClick(inv.id)}
-                            disabled={reExtractingId === inv.id}
-                            title="Retry AI Extraction"
-                          >
-                            <RefreshCw
-                              size={14}
-                              className={reExtractingId === inv.id ? 'spin' : ''}
-                            />
-                            <span>
-                              {reExtractingId === inv.id
-                                ? 'Extracting...'
-                                : 'Retry Extraction'}
-                            </span>
-                          </button>
+                        ) : inv.status === 'EXTRACTION_FAILED' ||
+                          (isDuplicate && inv.status !== 'REGISTERED') ||
+                          inv.status === 'REGISTRATION_FAILED' ? (
+                          <>
+                            <button
+                              className="btn-icon-sm"
+                              onClick={() => handleReExtractClick(inv.id)}
+                              disabled={reExtractingId === inv.id}
+                              title={
+                                reExtractingId === inv.id
+                                  ? 'Extracting with AI...'
+                                  : 'Retry AI Extraction'
+                              }
+                            >
+                              <RefreshCw
+                                size={14}
+                                className={
+                                  reExtractingId === inv.id ? 'spin' : ''
+                                }
+                              />
+                            </button>
+                            <button
+                              className="btn btn-sm btn-primary"
+                              onClick={() => onSelectInvoice(inv.id)}
+                              title={
+                                isDuplicate
+                                  ? 'Review & Resolve Duplicate'
+                                  : 'Manually Review & Edit'
+                              }
+                            >
+                              <FileCheck size={14} />
+                              <span>
+                                {isDuplicate ? 'Review & Fix' : 'Manual Review'}
+                              </span>
+                            </button>
+                          </>
                         ) : (
                           <button
                             className="btn btn-sm btn-secondary"

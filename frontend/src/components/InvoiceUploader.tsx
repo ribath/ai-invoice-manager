@@ -235,7 +235,7 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
       <div className="card-header">
         <div className="card-header-title">
           <UploadCloud className="text-primary" size={20} />
-          <h2>Instant Ingestion & Sequential Extraction</h2>
+          <h2>Upload Invoices</h2>
         </div>
       </div>
 
@@ -274,10 +274,10 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
         </div>
         <div className="dropzone-text">
           <p className="dropzone-primary-text">
-            <strong>Click to upload</strong> or drag & drop Japanese invoices
+            <strong>Click to upload</strong> or drag & drop
           </p>
           <p className="dropzone-sub-text">
-            PDFs, Scanned images, Handwritten JPGs • Uploads to Supabase & extracts instantly one by one
+            PDFs, Scanned images, Handwritten JPGs.
           </p>
         </div>
       </div>

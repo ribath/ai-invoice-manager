@@ -77,61 +77,96 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       const ext = inv.extractedData || {};
       const ver = detailRes.verification;
 
-      // Populate form state from verified columns or fallback to extractedData
-      const initialPartner =
-        inv.partnerCode ||
-        ver.suggestedPartner?.partner_code ||
-        partnersRes.partners?.[0]?.partner_code ||
-        'P-1001';
+      // If extraction failed or no data extracted, leave all inputs completely blank for manual entry
+      const isFailed = inv.status === 'EXTRACTION_FAILED' || !inv.extractedData;
 
-      setPartnerCode(initialPartner);
-      setInvoiceNumber(inv.invoiceNumber || ext.invoice_number || '');
-      setIssueDate(
-        inv.issueDate ||
-          ext.issue_date ||
-          new Date().toISOString().split('T')[0],
-      );
-      setDueDate(
-        inv.dueDate ||
-          ext.due_date ||
-          new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-      );
-      setCurrency(inv.currency || ext.currency || 'JPY');
+      if (isFailed) {
+        setPartnerCode(inv.partnerCode || '');
+        setInvoiceNumber(inv.invoiceNumber || '');
+        setIssueDate(inv.issueDate || '');
+        setDueDate(inv.dueDate || '');
+        setCurrency(inv.currency || 'JPY');
 
-      // Populate line items
-      if (inv.lines && inv.lines.length > 0) {
-        setLines(
-          inv.lines.map((l) => ({
-            description: l.description,
-            unit: l.unit,
-            quantity: l.quantity,
-            unit_price: l.unitPrice ?? l.unit_price ?? null,
-            amount: l.amount,
-            tax_code: l.taxCode || l.tax_code || 'T10',
-          })),
-        );
-      } else if (ext.lines && ext.lines.length > 0) {
-        setLines(
-          ext.lines.map((l: any) => ({
-            description: l.description || '',
-            unit: l.unit || '式',
-            quantity: l.quantity != null ? Number(l.quantity) : null,
-            unit_price: l.unit_price != null ? Number(l.unit_price) : null,
-            amount: Number(l.amount) || 0,
-            tax_code: l.tax_code || 'T10',
-          })),
-        );
+        if (inv.lines && inv.lines.length > 0) {
+          setLines(
+            inv.lines.map((l) => ({
+              description: l.description,
+              unit: l.unit,
+              quantity: l.quantity,
+              unit_price: l.unitPrice ?? l.unit_price ?? null,
+              amount: l.amount,
+              tax_code: l.taxCode || l.tax_code || 'T10',
+            })),
+          );
+        } else {
+          setLines([
+            {
+              description: '',
+              unit: '',
+              quantity: null,
+              unit_price: null,
+              amount: 0,
+              tax_code: 'T10',
+            },
+          ]);
+        }
       } else {
-        setLines([
-          {
-            description: '商品・サービス費',
-            unit: '式',
-            quantity: 1,
-            unit_price: ext.subtotal || 0,
-            amount: ext.subtotal || 0,
-            tax_code: 'T10',
-          },
-        ]);
+        // Populate form state from verified columns or fallback to extractedData
+        const initialPartner =
+          inv.partnerCode ||
+          ver?.suggestedPartner?.partner_code ||
+          partnersRes.partners?.[0]?.partner_code ||
+          'P-1001';
+
+        setPartnerCode(initialPartner);
+        setInvoiceNumber(inv.invoiceNumber || ext.invoice_number || '');
+        setIssueDate(
+          inv.issueDate ||
+            ext.issue_date ||
+            new Date().toISOString().split('T')[0],
+        );
+        setDueDate(
+          inv.dueDate ||
+            ext.due_date ||
+            new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        );
+        setCurrency(inv.currency || ext.currency || 'JPY');
+
+        // Populate line items
+        if (inv.lines && inv.lines.length > 0) {
+          setLines(
+            inv.lines.map((l) => ({
+              description: l.description,
+              unit: l.unit,
+              quantity: l.quantity,
+              unit_price: l.unitPrice ?? l.unit_price ?? null,
+              amount: l.amount,
+              tax_code: l.taxCode || l.tax_code || 'T10',
+            })),
+          );
+        } else if (ext.lines && ext.lines.length > 0) {
+          setLines(
+            ext.lines.map((l: any) => ({
+              description: l.description || '',
+              unit: l.unit || '式',
+              quantity: l.quantity != null ? Number(l.quantity) : null,
+              unit_price: l.unit_price != null ? Number(l.unit_price) : null,
+              amount: Number(l.amount) || 0,
+              tax_code: l.tax_code || 'T10',
+            })),
+          );
+        } else {
+          setLines([
+            {
+              description: '',
+              unit: '',
+              quantity: null,
+              unit_price: null,
+              amount: 0,
+              tax_code: 'T10',
+            },
+          ]);
+        }
       }
     } catch (err: any) {
       setFormError(err.message || 'Failed to load invoice details');
@@ -400,6 +435,29 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                       <strong>Registration Error:</strong>
                       <p>{formError}</p>
                     </div>
+                  </div>
+                )}
+
+                {/* Extraction Incomplete Notice Banner */}
+                {data?.invoice.status === 'EXTRACTION_FAILED' && (
+                  <div className="alert-banner alert-warning mb-4">
+                    <AlertTriangle size={20} />
+                    <div style={{ flex: 1 }}>
+                      <strong>Manual Data Entry Required:</strong>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.85rem' }}>
+                        Automated OCR extraction could not read this document. Please enter the supplier and line items manually below while viewing the original preview on the left.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      onClick={handleReExtract}
+                      disabled={isReExtracting}
+                      title="Try re-extracting with Vision AI"
+                    >
+                      <RefreshCw size={13} className={isReExtracting ? 'spin' : ''} />
+                      <span>{isReExtracting ? 'Extracting...' : 'Retry AI OCR'}</span>
+                    </button>
                   </div>
                 )}
 
