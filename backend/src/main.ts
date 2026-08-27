@@ -4,6 +4,10 @@ import { AppModule } from './app.module';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
+if (typeof (globalThis as any).WebSocket === 'undefined') {
+  (globalThis as any).WebSocket = class WebSocket {};
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
