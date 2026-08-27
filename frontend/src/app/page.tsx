@@ -1,17 +1,32 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { CheckCircle2, X } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { InvoiceUploader } from '../components/InvoiceUploader';
 import { InvoiceTable } from '../components/InvoiceTable';
 import { InvoiceReviewModal } from '../components/InvoiceReviewModal';
 import { api, InvoiceRecord } from '../lib/api';
 
+interface ToastState {
+  type: 'success' | 'error';
+  title: string;
+  message: string;
+}
+
 export default function Home() {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+
+  const showToast = (type: 'success' | 'error', title: string, message: string) => {
+    setToast({ type, title, message });
+    setTimeout(() => {
+      setToast(null);
+    }, 6000);
+  };
 
   const fetchDashboardData = useCallback(async () => {
     setIsRefreshing(true);
@@ -41,6 +56,7 @@ export default function Home() {
     try {
       await api.deleteInvoice(id);
       await fetchDashboardData();
+      showToast('success', 'Invoice Deleted', 'Invoice record has been removed.');
     } catch (err: any) {
       alert(`Delete failed: ${err.message}`);
     }
@@ -81,10 +97,37 @@ export default function Home() {
         <InvoiceReviewModal
           invoiceId={selectedInvoiceId}
           onClose={() => setSelectedInvoiceId(null)}
-          onSuccess={() => {
+          onSuccess={(accountingResult, invoiceNum) => {
+            fetchDashboardData();
+            showToast(
+              'success',
+              'Registration Successful!',
+              `Invoice ${invoiceNum ? `#${invoiceNum}` : ''} registered with Accounting ID ${accountingResult?.accounting_id || ''}.`,
+            );
+          }}
+          onError={() => {
             fetchDashboardData();
           }}
         />
+      )}
+
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div className="toast-container">
+          <div className={`toast toast-${toast.type}`}>
+            <CheckCircle2
+              size={20}
+              style={{ color: '#16a34a', flexShrink: 0, marginTop: 2 }}
+            />
+            <div style={{ flex: 1 }}>
+              <div className="toast-title">{toast.title}</div>
+              <div className="toast-body">{toast.message}</div>
+            </div>
+            <button className="toast-close" onClick={() => setToast(null)} title="Close">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

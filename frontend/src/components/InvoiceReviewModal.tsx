@@ -33,13 +33,15 @@ import {
 interface InvoiceReviewModalProps {
   invoiceId: string;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (accountingResult?: any, invoiceNumber?: string) => void;
+  onError?: (errorMessage?: string) => void;
 }
 
 export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   invoiceId,
   onClose,
   onSuccess,
+  onError,
 }) => {
   const [data, setData] = useState<InvoiceDetailResponse | null>(null);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -355,17 +357,20 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
       };
 
       const result = await api.registerInvoice(invoiceId, payload);
-      setSuccessResult(result.accountingResult);
-      onSuccess();
+      onSuccess(result.accountingResult, payload.invoice_number);
+      onClose();
     } catch (err: any) {
       console.error('Registration failed:', err);
-      setFormError(err.message || 'Failed to register invoice');
+      const errorMsg = err.message || 'Failed to register invoice';
+      setFormError(errorMsg);
+      onError?.(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const currentPartner = partners.find((p) => p.partner_code === partnerCode);
+  const isRegistered = data?.invoice.status === 'REGISTERED';
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -467,31 +472,7 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
 
               {/* RIGHT PANE: Verification & Form */}
               <div className="pane-right">
-                {/* Success Banner */}
-                {successResult && (
-                  <div className="alert-banner alert-success mb-4">
-                    <CheckCircle2 size={20} />
-                    <div>
-                      <strong>Successfully Registered!</strong>
-                      <p>
-                        Assigned Accounting ID:{' '}
-                        <code>{successResult.accounting_id}</code> for partner{' '}
-                        <strong>{successResult.partner_code}</strong>.
-                      </p>
-                    </div>
-                  </div>
-                )}
 
-                {/* Error Banner */}
-                {formError && (
-                  <div className="alert-banner alert-danger mb-4">
-                    <AlertCircle size={20} />
-                    <div>
-                      <strong>Registration Error:</strong>
-                      <p>{formError}</p>
-                    </div>
-                  </div>
-                )}
 
                 {/* Extraction Incomplete Notice Banner */}
                 {data?.invoice.status === 'EXTRACTION_FAILED' && (
@@ -517,49 +498,6 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                 )}
 
                 {/* Verification Summary Banner */}
-                {data?.verification && (
-                  <div className="verification-card mb-4">
-                    <span className="text-xs uppercase font-semibold text-muted">
-                      AI Verification Checks
-                    </span>
-                    {data.verification.isValid ? (
-                      <span className="badge badge-success">
-                        <CheckCircle2 size={12} />
-                        Math & Schema Valid
-                      </span>
-                    ) : (
-                      <span className="badge badge-danger ml-4">
-                        <AlertTriangle size={12} />
-                        Discrepancies Detected
-                      </span>
-                    )}
-
-                    {/* Errors List */}
-                    {data.verification.errors.length > 0 && (
-                      <div className="verification-issues errors">
-                        {data.verification.errors.map((err, i) => (
-                          <div key={i} className="issue-row">
-                            <AlertCircle size={14} className="text-danger" />
-                            <span>{err.message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Warnings List */}
-                    {data.verification.warnings.length > 0 && (
-                      <div className="verification-issues warnings">
-                        {data.verification.warnings.map((warn, i) => (
-                          <div key={i} className="issue-row">
-                            <AlertTriangle size={14} className="text-warning" />
-                            <span>{warn.message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Invoice Form */}
                 <div className="form-section">
                   <h3 className="section-title">Invoice Header Details</h3>
@@ -574,7 +512,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                       value={invoiceNumber}
                       onChange={(e) => setInvoiceNumber(e.target.value)}
                       placeholder="e.g. YM-2026-0107"
-                      className="form-input"
+                      className={`form-input ${isRegistered ? 'disabled' : ''}`}
+                      disabled={isRegistered}
                     />
                   </div>
 
@@ -587,8 +526,10 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     <div className="combobox-container">
                       <button
                         type="button"
-                        className={`combobox-trigger ${partnerDropdownOpen ? 'open' : ''}`}
+                        className={`combobox-trigger ${partnerDropdownOpen ? 'open' : ''} ${isRegistered ? 'disabled' : ''}`}
+                        disabled={isRegistered}
                         onClick={() => {
+                          if (isRegistered) return;
                           setPartnerDropdownOpen((prev) => !prev);
                           setPartnerSearchQuery('');
                         }}
@@ -598,10 +539,12 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                             ? `[${currentPartner.partner_code}] ${currentPartner.name} (${currentPartner.registration_no || 'No Reg #'})`
                             : '-- Select Partner --'}
                         </span>
-                        <ChevronDown size={14} className="text-muted" style={{ flexShrink: 0 }} />
+                        {!isRegistered && (
+                          <ChevronDown size={14} className="text-muted" style={{ flexShrink: 0 }} />
+                        )}
                       </button>
 
-                      {partnerDropdownOpen && (
+                      {!isRegistered && partnerDropdownOpen && (
                         <div className="combobox-menu">
                           <div className="combobox-search-wrap">
                             <Search size={14} className="text-muted" />
@@ -667,7 +610,18 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     )}
                   </div>
 
-                  <div className="form-grid-3 mt-3">
+                  <div className="form-group mb-3">
+                    <label className="form-label">Currency</label>
+                    <input
+                      type="text"
+                      value={currency}
+                      readOnly
+                      disabled
+                      className="form-input disabled"
+                    />
+                  </div>
+
+                  <div className="form-grid-2 mt-3">
                     <div className="form-group">
                       <label className="form-label">
                         <Calendar size={14} />
@@ -677,7 +631,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         type="date"
                         value={issueDate}
                         onChange={(e) => setIssueDate(e.target.value)}
-                        className="form-input"
+                        className={`form-input ${isRegistered ? 'disabled' : ''}`}
+                        disabled={isRegistered}
                       />
                     </div>
 
@@ -690,7 +645,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         type="date"
                         value={dueDate}
                         onChange={(e) => setDueDate(e.target.value)}
-                        className={`form-input ${isDateInvalid ? 'input-error' : ''}`}
+                        className={`form-input ${isDateInvalid ? 'input-error' : ''} ${isRegistered ? 'disabled' : ''}`}
+                        disabled={isRegistered}
                       />
                       {isDateInvalid && (
                         <span
@@ -707,17 +663,6 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         </span>
                       )}
                     </div>
-
-                    <div className="form-group">
-                      <label className="form-label">Currency</label>
-                      <input
-                        type="text"
-                        value={currency}
-                        readOnly
-                        disabled
-                        className="form-input disabled"
-                      />
-                    </div>
                   </div>
                 </div>
 
@@ -727,13 +672,15 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     <h3 className="section-title">
                       Line Items (明細) ({lines.length})
                     </h3>
-                    <button
-                      className="btn btn-xs btn-secondary"
-                      onClick={handleAddLine}
-                    >
-                      <Plus size={12} />
-                      Add Line
-                    </button>
+                    {!isRegistered && (
+                      <button
+                        className="btn btn-xs btn-secondary"
+                        onClick={handleAddLine}
+                      >
+                        <Plus size={12} />
+                        Add Line
+                      </button>
+                    )}
                   </div>
 
                   <div className="table-responsive lines-table-wrap">
@@ -746,7 +693,7 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                           <th style={{ width: '85px' }}>Unit Price</th>
                           <th style={{ width: '95px' }}>Amount (JPY)</th>
                           <th style={{ width: '75px' }}>Tax</th>
-                          <th style={{ width: '35px' }}></th>
+                          {!isRegistered && <th style={{ width: '35px' }}></th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -764,7 +711,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                                   )
                                 }
                                 placeholder="Description"
-                                className="line-input"
+                                className={`line-input ${isRegistered ? 'disabled' : ''}`}
+                                disabled={isRegistered}
                               />
                             </td>
                             <td>
@@ -779,7 +727,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                                   )
                                 }
                                 placeholder="式"
-                                className="line-input text-center"
+                                className={`line-input text-center ${isRegistered ? 'disabled' : ''}`}
+                                disabled={isRegistered}
                               />
                             </td>
                             <td>
@@ -796,7 +745,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                                   )
                                 }
                                 placeholder="—"
-                                className="line-input text-right"
+                                className={`line-input text-right ${isRegistered ? 'disabled' : ''}`}
+                                disabled={isRegistered}
                               />
                             </td>
                             <td>
@@ -813,7 +763,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                                   )
                                 }
                                 placeholder="—"
-                                className="line-input text-right"
+                                className={`line-input text-right ${isRegistered ? 'disabled' : ''}`}
+                                disabled={isRegistered}
                               />
                             </td>
                             <td>
@@ -827,7 +778,8 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                                     Number(e.target.value),
                                   )
                                 }
-                                className="line-input text-right font-medium"
+                                className={`line-input text-right font-medium ${isRegistered ? 'disabled' : ''}`}
+                                disabled={isRegistered}
                               />
                             </td>
                             <td>
@@ -840,22 +792,25 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                                     e.target.value,
                                   )
                                 }
-                                className="line-select text-center"
+                                className={`line-select text-center ${isRegistered ? 'disabled' : ''}`}
+                                disabled={isRegistered}
                               >
                                 <option value="T10">10% (T10)</option>
                                 <option value="T08">8% (T08)</option>
                               </select>
                             </td>
-                            <td>
-                              <button
-                                className="btn-icon-xs text-muted hover-danger"
-                                onClick={() => handleRemoveLine(idx)}
-                                disabled={lines.length <= 1}
-                                title="Remove Line"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </td>
+                            {!isRegistered && (
+                              <td>
+                                <button
+                                  className="btn-icon-xs text-muted hover-danger"
+                                  onClick={() => handleRemoveLine(idx)}
+                                  disabled={lines.length <= 1}
+                                  title="Remove Line"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -984,56 +939,86 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                   );
                 })()}
 
+                {/* Success Banner */}
+                {successResult && (
+                  <div className="alert-banner alert-success mt-4">
+                    <CheckCircle2 size={20} />
+                    <div>
+                      <strong>Successfully Registered!</strong>
+                      <p>
+                        Assigned Accounting ID:{' '}
+                        <code>{successResult.accounting_id}</code> for partner{' '}
+                        <strong>{successResult.partner_code}</strong>.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Banner */}
+                {formError && (
+                  <div className="alert-banner alert-danger mt-4">
+                    <AlertCircle size={20} />
+                    <div>
+                      <strong>Registration Error:</strong>
+                      <p>{formError}</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Footer */}
                 <div className="modal-footer mt-5">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={handleReExtract}
-                    disabled={isReExtracting || isSubmitting}
-                  >
-                    <RefreshCw
-                      size={14}
-                      className={isReExtracting ? 'spin' : ''}
-                    />
-                    <span>Re-extract with AI</span>
-                  </button>
-
-                  <div className="footer-right-actions">
+                  {!isRegistered && (
                     <button
-                      className="btn btn-ghost"
+                      className="btn btn-secondary"
+                      onClick={handleReExtract}
+                      disabled={isReExtracting || isSubmitting}
+                    >
+                      <RefreshCw
+                        size={14}
+                        className={isReExtracting ? 'spin' : ''}
+                      />
+                      <span>Re-extract with AI</span>
+                    </button>
+                  )}
+
+                  <div className="footer-right-actions" style={{ marginLeft: isRegistered ? 'auto' : undefined }}>
+                    <button
+                      className={`btn ${isRegistered ? 'btn-secondary' : 'btn-ghost'}`}
                       onClick={onClose}
                       disabled={isSubmitting}
                     >
-                      Cancel
+                      {isRegistered ? 'Close' : 'Cancel'}
                     </button>
 
-                    <button
-                      className="btn btn-primary btn-lg"
-                      onClick={handleRegister}
-                      disabled={
-                        isSubmitting ||
-                        !partnerCode ||
-                        !invoiceNumber ||
-                        isDateInvalid
-                      }
-                      title={
-                        isDateInvalid
-                          ? 'Cannot register: Due date is earlier than issue date'
-                          : ''
-                      }
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <RefreshCw size={16} className="spin" />
-                          <span>Registering with Accounting...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send size={16} />
-                          <span>Register to Accounting System</span>
-                        </>
-                      )}
-                    </button>
+                    {!isRegistered && (
+                      <button
+                        className="btn btn-primary btn-lg"
+                        onClick={handleRegister}
+                        disabled={
+                          isSubmitting ||
+                          !partnerCode ||
+                          !invoiceNumber ||
+                          isDateInvalid
+                        }
+                        title={
+                          isDateInvalid
+                            ? 'Cannot register: Due date is earlier than issue date'
+                            : ''
+                        }
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw size={16} className="spin" />
+                            <span>Registering with Accounting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send size={16} />
+                            <span>Register to Accounting System</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

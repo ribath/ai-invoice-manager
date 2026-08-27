@@ -74,9 +74,7 @@ export class Invoice {
   @Column({ name: 'total_amount', type: 'int', nullable: true })
   totalAmount: number | null;
 
-  @OneToMany(() => InvoiceLine, (line) => line.invoice, {
-    cascade: true,
-  })
+  @OneToMany(() => InvoiceLine, (line) => line.invoice)
   lines: InvoiceLine[];
 
   @CreateDateColumn({ name: 'created_at' })

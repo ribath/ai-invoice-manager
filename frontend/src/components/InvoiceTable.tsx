@@ -155,11 +155,17 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
           </span>
         );
       case 'EXTRACTION_FAILED':
+        return (
+          <span className="badge badge-danger">
+            <AlertTriangle size={12} />
+            Extraction Error
+          </span>
+        );
       case 'REGISTRATION_FAILED':
         return (
           <span className="badge badge-danger">
             <AlertTriangle size={12} />
-            {status === 'EXTRACTION_FAILED' ? 'Extraction Error' : 'Sync Error'}
+            Registration Failed
           </span>
         );
       default:

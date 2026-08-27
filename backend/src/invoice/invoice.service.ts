@@ -168,61 +168,78 @@ export class InvoiceService {
         `Registering invoice ${id} (${dto.invoice_number}) with Mock Accounting API...`,
       );
 
-      // Register with accounting system
+      // 1. Register with accounting system
       const accountingResult = await this.accountingClient.registerInvoice(
         dto as any,
       );
 
-      // Delete existing lines if any
-      if (invoice.lines && invoice.lines.length > 0) {
-        await this.lineRepository.delete({ invoiceId: invoice.id });
+      // 2. Update invoice header fields in DB
+      await this.invoiceRepository.update(id, {
+        status: InvoiceStatus.REGISTERED,
+        accountingId: accountingResult.accounting_id,
+        partnerCode: dto.partner_code,
+        invoiceNumber: dto.invoice_number,
+        issueDate: dto.issue_date,
+        dueDate: dto.due_date,
+        currency: dto.currency || 'JPY',
+        subtotal: dto.subtotal,
+        taxAmount: dto.tax_amount,
+        totalAmount: dto.total_amount,
+        errorMessage: null,
+      });
+
+      // 3. Delete existing lines if any
+      await this.lineRepository.delete({ invoiceId: id });
+
+      // 4. Insert new verified lines directly
+      if (dto.lines && dto.lines.length > 0) {
+        await this.lineRepository
+          .createQueryBuilder()
+          .insert()
+          .into(InvoiceLine)
+          .values(
+            dto.lines.map((l) => ({
+              invoiceId: id,
+              description: l.description,
+              unit: l.unit,
+              quantity: l.quantity ?? null,
+              unitPrice: l.unit_price ?? null,
+              amount: l.amount,
+              taxCode: l.tax_code,
+            })),
+          )
+          .execute();
       }
 
-      // Create new verified lines
-      const newLines = dto.lines.map((l) =>
-        this.lineRepository.create({
-          invoiceId: invoice.id,
-          description: l.description,
-          unit: l.unit,
-          quantity: l.quantity ?? null,
-          unitPrice: l.unit_price ?? null,
-          amount: l.amount,
-          taxCode: l.tax_code,
-        }),
-      );
-      await this.lineRepository.save(newLines);
-
-      // Update invoice fields
-      invoice.status = InvoiceStatus.REGISTERED;
-      invoice.accountingId = accountingResult.accounting_id;
-      invoice.partnerCode = dto.partner_code;
-      invoice.invoiceNumber = dto.invoice_number;
-      invoice.issueDate = dto.issue_date;
-      invoice.dueDate = dto.due_date;
-      invoice.currency = dto.currency || 'JPY';
-      invoice.subtotal = dto.subtotal;
-      invoice.taxAmount = dto.tax_amount;
-      invoice.totalAmount = dto.total_amount;
-      invoice.errorMessage = null;
-
-      const updatedInvoice = await this.invoiceRepository.save(invoice);
-      updatedInvoice.lines = newLines;
+      const updatedInvoice = await this.invoiceRepository.findOne({
+        where: { id },
+        relations: ['lines'],
+      });
 
       this.logger.log(
         `Successfully registered invoice ${id} -> ${accountingResult.accounting_id}`,
       );
 
       return {
-        invoice: updatedInvoice,
+        invoice: updatedInvoice!,
         accountingResult,
       };
     } catch (error) {
+      const statusCode =
+        error.status ||
+        error.statusCode ||
+        (typeof error.getStatus === 'function' ? error.getStatus() : null) ||
+        error.response?.status ||
+        error.response?.statusCode ||
+        'UNKNOWN_STATUS';
+
       this.logger.error(
-        `Registration failed for invoice ${id}: ${error.message}`,
+        `Registration failed for invoice ${id} [Status ${statusCode}]: ${error.message}`,
       );
-      invoice.status = InvoiceStatus.REGISTRATION_FAILED;
-      invoice.errorMessage = error.message || 'Registration failed';
-      await this.invoiceRepository.save(invoice);
+      await this.invoiceRepository.update(id, {
+        status: InvoiceStatus.REGISTRATION_FAILED,
+        errorMessage: error.message || 'Registration failed',
+      });
       throw error;
     }
   }
