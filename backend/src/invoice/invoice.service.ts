@@ -65,6 +65,21 @@ export class InvoiceService {
   }
 
   /**
+   * Clears all database tables (invoice_lines, invoices) and resets the Mock Accounting API.
+   */
+  async resetAll(): Promise<{ success: boolean; message: string; mockReset: any }> {
+    this.logger.log('Resetting all invoices from database and Mock Accounting API...');
+    await this.lineRepository.delete({});
+    await this.invoiceRepository.delete({});
+    const mockReset = await this.accountingClient.resetInvoices();
+    return {
+      success: true,
+      message: 'All invoices deleted from database and mock accounting API.',
+      mockReset,
+    };
+  }
+
+  /**
    * Creates a new Invoice record from file metadata and triggers extraction synchronously.
    */
   async createAndExtract(dto: CreateInvoiceRecordDto): Promise<Invoice> {

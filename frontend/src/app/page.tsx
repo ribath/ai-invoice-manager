@@ -62,6 +62,24 @@ export default function Home() {
     }
   };
 
+  const handleResetSystem = async () => {
+    setIsRefreshing(true);
+    try {
+      await api.resetAll();
+      await fetchDashboardData();
+      showToast(
+        'success',
+        'System Reset Complete',
+        'All invoices cleared from database and mock accounting system.',
+      );
+    } catch (err: any) {
+      console.error('Reset failed:', err);
+      showToast('error', 'Reset Failed', err.message || 'Could not reset system');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const handleReExtract = async (id: string) => {
     try {
       await api.reExtractInvoice(id);
@@ -74,7 +92,7 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       <Navbar
-        onRefresh={fetchDashboardData}
+        onRefresh={handleResetSystem}
         isRefreshing={isRefreshing}
       />
 

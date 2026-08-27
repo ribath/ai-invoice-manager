@@ -45,6 +45,12 @@ export class InvoiceController {
     return this.invoiceService.resetAccountingInvoices();
   }
 
+  @Post('reset-all')
+  @HttpCode(HttpStatus.OK)
+  async resetAll() {
+    return this.invoiceService.resetAll();
+  }
+
   // --- Invoice Intake Endpoints ---
 
   /**

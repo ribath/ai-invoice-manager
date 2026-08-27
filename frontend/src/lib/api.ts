@@ -207,4 +207,8 @@ export const api = {
     request<{ success: boolean; id: string }>(`/invoices/${id}`, {
       method: 'DELETE',
     }),
+  resetAll: () =>
+    request<{ success: boolean; message: string }>('/invoices/reset-all', {
+      method: 'POST',
+    }),
 };
