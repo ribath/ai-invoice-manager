@@ -34,7 +34,7 @@ Build an automated ingestion and verification pipeline with a human-in-the-loop 
 ## 3. Scoping decisions
 
 **What you built:**
-1. **Multimodal Vision LLM Extraction Engine:** Uses Gemini 2.0 Flash / OpenAI vision models with specialized Japanese invoice prompts to extract supplier name, tax registration number, dates, line items, unit prices, quantities, and tax codes (`T10`/`T08`).
+1. **Multimodal Vision LLM Extraction Engine:** Uses Gemini 2.5 Flash / OpenAI vision models with specialized Japanese invoice prompts to extract supplier name, tax registration number, dates, line items, unit prices, quantities, and tax codes (`T10`/`T08`).
 2. **Deterministic Verification Engine:** Automated recalculation of subtotals (`∑ lines`), tax calculations per tax code with integer floor rounding (`Math.floor(subtotal_rate * rate)`), total amounts, date consistency (`due_date >= issue_date`), and partner master fuzzy/alias matching.
 3. **Split-Screen Human Review UI:** Side-by-side view with original document preview on the left and pre-populated editable form on the right with partner selection, match status indicators, and one-click registration to `ACC-xxxx`.
 4. **Categorized Dashboard & Global Search:** Organized tabs separating *All Invoices*, *Ready for Review*, *Registered*, and *Issues* (Extraction Errors, Registration Failures, and Duplicate Invoices) with real-time multi-field search across file name, supplier, partner code, invoice number, and accounting ID.
@@ -55,7 +55,7 @@ Build an automated ingestion and verification pipeline with a human-in-the-loop 
 - **Frontend:** Next.js 14 (App Router) + Vanilla CSS design system. Clean, responsive, glassmorphic UI with zero UI framework bloat.
 - **Backend:** NestJS 10 + TypeORM + PostgreSQL 16. Modular architecture separating storage, LLM extraction, math verification, and accounting client services.
 - **File Storage:** Supabase Storage (private bucket) with temporary signed URLs for secure, zero-binary backend pass-through (S3/Cloudflare R2 would be used in production, but Supabase was selected to avoid credit card setup requirements).
-- **Vision LLM:** Google Gemini 2.0 Flash / 1.5 Flash (via `@google/generative-ai`) chosen for native multimodal OCR speed, high accuracy on Japanese kanji/eras, and cost effectiveness, with configurable fallback to OpenAI GPT-4o.
+- **Vision LLM:** Google Gemini 2.5 Flash (via Google AI API) chosen for state-of-the-art multimodal document OCR speed, exceptional accuracy on complex Japanese kanji/eras, structured JSON mode, and cost effectiveness, with configurable fallback to OpenAI GPT-4o.
 - **Accounting System:** Integrated directly with the provided Python Mock Accounting API at `:8080`, adhering strictly to authentication (`X-API-Key`) and business rule envelopes.
 
 ## 5. How you used AI, and how you checked it
@@ -98,15 +98,15 @@ none
 
 ### Cost Breakdown (at 1,000 Invoices / Month)
 
-#### 1. Current Architecture (Supabase Storage + Gemini 2.0 Flash + Cloud Run + Postgres)
-- **Vision LLM (Gemini 2.0 Flash):** ~$0.30 - $0.50 / month (1,000 invoices × ~1.5k input tokens + ~400 output tokens @ $0.10/1M in, $0.40/1M out).
+#### 1. Current Architecture (Supabase Storage + Gemini 2.5 Flash + Cloud Run + Postgres)
+- **Vision LLM (Gemini 2.5 Flash):** ~$0.30 - $0.50 / month (1,000 invoices × ~1.5k input tokens + ~400 output tokens @ $0.10/1M in, $0.40/1M out).
 - **File Storage (Supabase Storage):** $0.00 / month (1,000 invoices × ~500KB = ~500MB, covered within 1GB free tier; ~$0.02/month if scaled).
 - **Database (PostgreSQL / Neon / Supabase):** $0.00 - $10.00 / month (free tier for development; ~$10/month for dedicated micro instance).
 - **Backend & Frontend Compute (Cloud Run / Render):** ~$5.00 - $15.00 / month (serverless pay-per-request compute).
 - **Total Current Architecture:** **~$10 - $25 / month** (less than $0.025 / invoice).
 
 #### 2. Proposed Production Architecture (Cloudflare R2 + AWS Lambda + SQS + Managed Postgres)
-- **Vision LLM (Gemini 2.0 Flash / Vertex AI Enterprise):** ~$0.30 - $0.50 / month.
+- **Vision LLM (Gemini 2.5 Flash / Vertex AI Enterprise):** ~$0.30 - $0.50 / month.
 - **File Storage (Cloudflare R2 / S3):** $0.00 / month (500MB storage + 1,000 write operations covered by R2's 10GB free tier and **$0 egress fees**; or <$0.02 on S3).
 - **Serverless Extraction Compute (AWS Lambda / Cloud Functions):** $0.00 / month (1,000 executions × 3s × 512MB = 1,500 GB-seconds, completely covered under AWS 400,000 GB-seconds monthly free tier).
 - **Queue & Event Orchestration (Amazon SQS / EventBridge):** $0.00 / month (1,000 requests covered under AWS free tier of 1M requests/month).
