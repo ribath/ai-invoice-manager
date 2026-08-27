@@ -64,13 +64,10 @@ export class InvoiceService {
     return this.accountingClient.resetInvoices();
   }
 
-  /**
-   * Clears all database tables (invoice_lines, invoices) and resets the Mock Accounting API.
-   */
   async resetAll(): Promise<{ success: boolean; message: string; mockReset: any }> {
     this.logger.log('Resetting all invoices from database and Mock Accounting API...');
-    await this.lineRepository.delete({});
-    await this.invoiceRepository.delete({});
+    await this.lineRepository.createQueryBuilder().delete().from(InvoiceLine).execute();
+    await this.invoiceRepository.createQueryBuilder().delete().from(Invoice).execute();
     const mockReset = await this.accountingClient.resetInvoices();
     return {
       success: true,
