@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   X,
   CheckCircle2,
@@ -18,6 +18,9 @@ import {
   FileText,
   HelpCircle,
   Maximize2,
+  Search,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import {
   api,
@@ -54,6 +57,41 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('JPY');
   const [lines, setLines] = useState<InvoiceLineItem[]>([]);
+
+  // Searchable Partner Combobox State
+  const [partnerDropdownOpen, setPartnerDropdownOpen] = useState(false);
+  const [partnerSearchQuery, setPartnerSearchQuery] = useState('');
+  const partnerDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        partnerDropdownRef.current &&
+        !partnerDropdownRef.current.contains(event.target as Node)
+      ) {
+        setPartnerDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredPartners = useMemo(() => {
+    if (!partnerSearchQuery.trim()) return partners;
+    const q = partnerSearchQuery.toLowerCase();
+    return partners.filter((p) => {
+      const code = p.partner_code.toLowerCase();
+      const name = p.name.toLowerCase();
+      const reg = (p.registration_no || '').toLowerCase();
+      const aliases = (p.aliases || []).join(' ').toLowerCase();
+      return (
+        code.includes(q) ||
+        name.includes(q) ||
+        reg.includes(q) ||
+        aliases.includes(q)
+      );
+    });
+  }, [partners, partnerSearchQuery]);
 
   useEffect(() => {
     loadDetails();
@@ -122,13 +160,13 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
         setInvoiceNumber(inv.invoiceNumber || ext.invoice_number || '');
         setIssueDate(
           inv.issueDate ||
-            ext.issue_date ||
-            new Date().toISOString().split('T')[0],
+          ext.issue_date ||
+          new Date().toISOString().split('T')[0],
         );
         setDueDate(
           inv.dueDate ||
-            ext.due_date ||
-            new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          ext.due_date ||
+          new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
         );
         setCurrency(inv.currency || ext.currency || 'JPY');
 
@@ -259,6 +297,15 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
     }
   };
 
+  // Date validation check (Due Date cannot be earlier than Issue Date)
+  const isDateInvalid = Boolean(
+    issueDate &&
+    dueDate &&
+    /^\d{4}-\d{2}-\d{2}$/.test(issueDate) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(dueDate) &&
+    new Date(dueDate) < new Date(issueDate),
+  );
+
   const handleRegister = async () => {
     setIsSubmitting(true);
     setFormError(null);
@@ -271,6 +318,13 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
     }
     if (!invoiceNumber.trim()) {
       setFormError('Invoice Number cannot be empty');
+      setIsSubmitting(false);
+      return;
+    }
+    if (isDateInvalid) {
+      setFormError(
+        'Due date cannot be earlier than issue date (お支払期日は発行日以降である必要があります)',
+      );
       setIsSubmitting(false);
       return;
     }
@@ -325,10 +379,11 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
             <Sparkles className="text-primary" size={20} />
             <div>
               <h2 className="modal-title">
-                Invoice Review & Verification
+                {invoiceNumber ? `Invoice #${invoiceNumber}` : 'Invoice Review'}
               </h2>
               <p className="modal-subtitle">
-                {data?.invoice.fileName} • ID: {invoiceId.substring(0, 8)}...
+                {issueDate ? `Issue Date: ${issueDate}` : 'Issue Date: —'} •{' '}
+                {data?.invoice.fileName}
               </p>
             </div>
           </div>
@@ -464,38 +519,19 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                 {/* Verification Summary Banner */}
                 {data?.verification && (
                   <div className="verification-card mb-4">
-                    <div className="verification-header">
-                      <span className="text-xs uppercase font-semibold text-muted">
-                        AI Verification Checks
+                    <span className="text-xs uppercase font-semibold text-muted">
+                      AI Verification Checks
+                    </span>
+                    {data.verification.isValid ? (
+                      <span className="badge badge-success">
+                        <CheckCircle2 size={12} />
+                        Math & Schema Valid
                       </span>
-                      {data.verification.isValid ? (
-                        <span className="badge badge-success">
-                          <CheckCircle2 size={12} />
-                          Math & Schema Valid
-                        </span>
-                      ) : (
-                        <span className="badge badge-danger">
-                          <AlertTriangle size={12} />
-                          Discrepancies Detected
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Partner Matching Chip */}
-                    {data.verification.suggestedPartner && (
-                      <div className="partner-match-badge">
-                        <Building2 size={14} />
-                        <span>
-                          Supplier match: <strong>{data.verification.suggestedPartner.name}</strong> ({data.verification.suggestedPartner.partner_code})
-                        </span>
-                        <span className="match-confidence">
-                          {data.verification.suggestedPartner.matchType} (
-                          {Math.round(
-                            data.verification.suggestedPartner.confidence * 100,
-                          )}
-                          %)
-                        </span>
-                      </div>
+                    ) : (
+                      <span className="badge badge-danger ml-4">
+                        <AlertTriangle size={12} />
+                        Discrepancies Detected
+                      </span>
                     )}
 
                     {/* Errors List */}
@@ -528,45 +564,107 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                 <div className="form-section">
                   <h3 className="section-title">Invoice Header Details</h3>
 
-                  <div className="form-grid-2">
-                    <div className="form-group">
-                      <label className="form-label">
-                        <Building2 size={14} />
-                        Supplier (Partner Master) *
-                      </label>
-                      <select
-                        value={partnerCode}
-                        onChange={(e) => setPartnerCode(e.target.value)}
-                        className="form-select"
+                  <div className="form-group mb-3">
+                    <label className="form-label">
+                      <Hash size={14} />
+                      Invoice Number (請求書番号) *
+                    </label>
+                    <input
+                      type="text"
+                      value={invoiceNumber}
+                      onChange={(e) => setInvoiceNumber(e.target.value)}
+                      placeholder="e.g. YM-2026-0107"
+                      className="form-input"
+                    />
+                  </div>
+
+                  <div className="form-group mb-3" ref={partnerDropdownRef}>
+                    <label className="form-label">
+                      <Building2 size={14} />
+                      Supplier (Partner Master) *
+                    </label>
+
+                    <div className="combobox-container">
+                      <button
+                        type="button"
+                        className={`combobox-trigger ${partnerDropdownOpen ? 'open' : ''}`}
+                        onClick={() => {
+                          setPartnerDropdownOpen((prev) => !prev);
+                          setPartnerSearchQuery('');
+                        }}
                       >
-                        <option value="">-- Select Partner --</option>
-                        {partners.map((p) => (
-                          <option key={p.partner_code} value={p.partner_code}>
-                            [{p.partner_code}] {p.name} (
-                            {p.registration_no || 'No Reg #'})
-                          </option>
-                        ))}
-                      </select>
-                      {currentPartner && (
-                        <span className="form-helper">
-                          Registration: {currentPartner.registration_no}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {currentPartner
+                            ? `[${currentPartner.partner_code}] ${currentPartner.name} (${currentPartner.registration_no || 'No Reg #'})`
+                            : '-- Select Partner --'}
                         </span>
+                        <ChevronDown size={14} className="text-muted" style={{ flexShrink: 0 }} />
+                      </button>
+
+                      {partnerDropdownOpen && (
+                        <div className="combobox-menu">
+                          <div className="combobox-search-wrap">
+                            <Search size={14} className="text-muted" />
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="Search by name, code, alias, registration #..."
+                              value={partnerSearchQuery}
+                              onChange={(e) => setPartnerSearchQuery(e.target.value)}
+                              className="combobox-search-input"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+
+                          <div className="combobox-options">
+                            {filteredPartners.length === 0 ? (
+                              <div className="text-center py-3 text-muted text-xs">
+                                No partner found matching &ldquo;{partnerSearchQuery}&rdquo;
+                              </div>
+                            ) : (
+                              filteredPartners.map((p) => {
+                                const isSelected = p.partner_code === partnerCode;
+                                return (
+                                  <div
+                                    key={p.partner_code}
+                                    className={`combobox-option ${isSelected ? 'selected' : ''}`}
+                                    onClick={() => {
+                                      setPartnerCode(p.partner_code);
+                                      setPartnerDropdownOpen(false);
+                                      setPartnerSearchQuery('');
+                                    }}
+                                  >
+                                    <div className="combobox-option-info">
+                                      <div className="combobox-option-main">
+                                        <span className="font-semibold">[{p.partner_code}]</span>
+                                        <span>{p.name}</span>
+                                      </div>
+                                      <div className="combobox-option-sub">
+                                        {p.registration_no && (
+                                          <span>Reg: {p.registration_no}</span>
+                                        )}
+                                        {p.aliases && p.aliases.length > 0 && (
+                                          <span> • Aliases: {p.aliases.join(', ')}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {isSelected && (
+                                      <Check size={14} className="text-primary" />
+                                    )}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    <div className="form-group">
-                      <label className="form-label">
-                        <Hash size={14} />
-                        Invoice Number (請求書番号) *
-                      </label>
-                      <input
-                        type="text"
-                        value={invoiceNumber}
-                        onChange={(e) => setInvoiceNumber(e.target.value)}
-                        placeholder="e.g. YM-2026-0107"
-                        className="form-input"
-                      />
-                    </div>
+                    {currentPartner && (
+                      <span className="form-helper">
+                        Registration: {currentPartner.registration_no}
+                      </span>
+                    )}
                   </div>
 
                   <div className="form-grid-3 mt-3">
@@ -592,8 +690,22 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                         type="date"
                         value={dueDate}
                         onChange={(e) => setDueDate(e.target.value)}
-                        className="form-input"
+                        className={`form-input ${isDateInvalid ? 'input-error' : ''}`}
                       />
+                      {isDateInvalid && (
+                        <span
+                          className="form-helper text-danger"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginTop: '4px',
+                          }}
+                        >
+                          <AlertCircle size={12} />
+                          Due date cannot be earlier than issue date
+                        </span>
+                      )}
                     </div>
 
                     <div className="form-group">
@@ -752,42 +864,125 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                 </div>
 
                 {/* Calculation Breakdown & Total Box */}
-                <div className="totals-card mt-4">
-                  <div className="totals-row">
-                    <span className="totals-label">Subtotal (小計):</span>
-                    <span className="totals-value">
-                      ¥{subtotal.toLocaleString()}
-                    </span>
-                  </div>
+                {(() => {
+                  const extSubtotal =
+                    data?.invoice.extractedData?.subtotal != null
+                      ? Number(data.invoice.extractedData.subtotal)
+                      : null;
+                  const extTax =
+                    data?.invoice.extractedData?.tax_amount != null
+                      ? Number(data.invoice.extractedData.tax_amount)
+                      : null;
+                  const extTotal =
+                    data?.invoice.extractedData?.total_amount != null
+                      ? Number(data.invoice.extractedData.total_amount)
+                      : null;
 
-                  {taxBreakdown['T10'] && (
-                    <div className="totals-row text-xs text-muted">
-                      <span>Standard Tax (10% on ¥{taxBreakdown['T10'].subtotal.toLocaleString()}):</span>
-                      <span>¥{taxBreakdown['T10'].tax.toLocaleString()}</span>
+                  return (
+                    <div className="totals-card mt-4">
+                      <div className="totals-row">
+                        <span className="totals-label">Subtotal (小計):</span>
+                        <div className="totals-value-wrap">
+                          {extSubtotal !== null &&
+                            (subtotal === extSubtotal ? (
+                              <span
+                                title={`Matches extracted subtotal (¥${extSubtotal.toLocaleString()})`}
+                                style={{ display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                <CheckCircle2 size={16} style={{ color: '#10b981' }} />
+                              </span>
+                            ) : (
+                              <span
+                                title={`Mismatch: Extracted subtotal is ¥${extSubtotal.toLocaleString()}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}
+                              >
+                                <AlertCircle size={16} style={{ color: '#f59e0b' }} />
+                              </span>
+                            ))}
+                          <span className="totals-value">
+                            ¥{subtotal.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      {taxBreakdown['T10'] && (
+                        <div className="totals-row text-xs text-muted">
+                          <span>
+                            Standard Tax (10% on ¥
+                            {taxBreakdown['T10'].subtotal.toLocaleString()}):
+                          </span>
+                          <span>
+                            ¥{taxBreakdown['T10'].tax.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+
+                      {taxBreakdown['T08'] && (
+                        <div className="totals-row text-xs text-muted">
+                          <span>
+                            Reduced Tax (8% on ¥
+                            {taxBreakdown['T08'].subtotal.toLocaleString()}):
+                          </span>
+                          <span>
+                            ¥{taxBreakdown['T08'].tax.toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="totals-row">
+                        <span className="totals-label">Total Tax (消費税):</span>
+                        <div className="totals-value-wrap">
+                          {extTax !== null &&
+                            (taxAmount === extTax ? (
+                              <span
+                                title={`Matches extracted tax amount (¥${extTax.toLocaleString()})`}
+                                style={{ display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                <CheckCircle2 size={16} style={{ color: '#10b981' }} />
+                              </span>
+                            ) : (
+                              <span
+                                title={`Mismatch: Extracted tax amount is ¥${extTax.toLocaleString()}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}
+                              >
+                                <AlertCircle size={16} style={{ color: '#f59e0b' }} />
+                              </span>
+                            ))}
+                          <span className="totals-value">
+                            ¥{taxAmount.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="totals-row grand-total">
+                        <span className="totals-label font-bold">
+                          Total Amount (御請求金額):
+                        </span>
+                        <div className="totals-value-wrap">
+                          {extTotal !== null &&
+                            (totalAmount === extTotal ? (
+                              <span
+                                title={`Matches extracted total amount (¥${extTotal.toLocaleString()})`}
+                                style={{ display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                <CheckCircle2 size={16} style={{ color: '#10b981' }} />
+                              </span>
+                            ) : (
+                              <span
+                                title={`Mismatch: Extracted total amount is ¥${extTotal.toLocaleString()}`}
+                                style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help' }}
+                              >
+                                <AlertCircle size={16} style={{ color: '#f59e0b' }} />
+                              </span>
+                            ))}
+                          <span className="totals-value font-bold text-primary">
+                            ¥{totalAmount.toLocaleString()} JPY
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  )}
-
-                  {taxBreakdown['T08'] && (
-                    <div className="totals-row text-xs text-muted">
-                      <span>Reduced Tax (8% on ¥{taxBreakdown['T08'].subtotal.toLocaleString()}):</span>
-                      <span>¥{taxBreakdown['T08'].tax.toLocaleString()}</span>
-                    </div>
-                  )}
-
-                  <div className="totals-row">
-                    <span className="totals-label">Total Tax (消費税):</span>
-                    <span className="totals-value">
-                      ¥{taxAmount.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="totals-row grand-total">
-                    <span className="totals-label font-bold">Total Amount (御請求金額):</span>
-                    <span className="totals-value font-bold text-primary">
-                      ¥{totalAmount.toLocaleString()} JPY
-                    </span>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Action Footer */}
                 <div className="modal-footer mt-5">
@@ -815,7 +1010,17 @@ export const InvoiceReviewModal: React.FC<InvoiceReviewModalProps> = ({
                     <button
                       className="btn btn-primary btn-lg"
                       onClick={handleRegister}
-                      disabled={isSubmitting || !partnerCode || !invoiceNumber}
+                      disabled={
+                        isSubmitting ||
+                        !partnerCode ||
+                        !invoiceNumber ||
+                        isDateInvalid
+                      }
+                      title={
+                        isDateInvalid
+                          ? 'Cannot register: Due date is earlier than issue date'
+                          : ''
+                      }
                     >
                       {isSubmitting ? (
                         <>

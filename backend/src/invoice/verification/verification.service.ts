@@ -19,7 +19,13 @@ export interface VerificationResult {
   suggestedPartner: {
     partner_code: string;
     name: string;
-    matchType: 'registration_no' | 'name_exact' | 'alias' | 'fuzzy' | 'none';
+    matchType:
+      | 'partner_code'
+      | 'registration_no'
+      | 'name_exact'
+      | 'alias'
+      | 'fuzzy'
+      | 'none';
     confidence: number;
   } | null;
   mathCheck: {
@@ -236,7 +242,24 @@ export class VerificationService {
   ): VerificationResult['suggestedPartner'] {
     if (!partners || partners.length === 0) return null;
 
-    // 1. Match by registration number (T+13 digits)
+    // 1. Match by partner_code if present in extracted supplier text
+    if (supplierName) {
+      const codeMatch = partners.find(
+        (p) =>
+          p.partner_code &&
+          supplierName.toUpperCase().includes(p.partner_code.toUpperCase()),
+      );
+      if (codeMatch) {
+        return {
+          partner_code: codeMatch.partner_code,
+          name: codeMatch.name,
+          matchType: 'partner_code',
+          confidence: 1.0,
+        };
+      }
+    }
+
+    // 2. Match by Qualified Invoice Registration Number (T + 13 digits)
     if (registrationNo) {
       const regMatch = partners.find(
         (p) =>

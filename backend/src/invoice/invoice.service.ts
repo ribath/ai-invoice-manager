@@ -153,6 +153,16 @@ export class InvoiceService {
       throw new NotFoundException(`Invoice ${id} not found`);
     }
 
+    if (
+      dto.issue_date &&
+      dto.due_date &&
+      new Date(dto.due_date) < new Date(dto.issue_date)
+    ) {
+      throw new BadRequestException(
+        `Due date (${dto.due_date}) cannot be earlier than issue date (${dto.issue_date}).`,
+      );
+    }
+
     try {
       this.logger.log(
         `Registering invoice ${id} (${dto.invoice_number}) with Mock Accounting API...`,
