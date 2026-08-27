@@ -32,8 +32,10 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const tasksRef = useRef<FileUploadTask[]>([]);
   const processingRef = useRef(false);
   const autoClearTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  tasksRef.current = tasks;
 
   // Clear timeout on unmount
   useEffect(() => {
@@ -44,40 +46,47 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
     };
   }, []);
 
-  const processQueue = useCallback(
-    async (currentTasks: FileUploadTask[]) => {
-      if (processingRef.current) return;
-      processingRef.current = true;
-      setIsProcessing(true);
+  const processQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    processingRef.current = true;
+    setIsProcessing(true);
 
-      if (autoClearTimeoutRef.current) {
-        clearTimeout(autoClearTimeoutRef.current);
-        autoClearTimeoutRef.current = null;
-      }
+    if (autoClearTimeoutRef.current) {
+      clearTimeout(autoClearTimeoutRef.current);
+      autoClearTimeoutRef.current = null;
+    }
 
-      for (let i = 0; i < currentTasks.length; i++) {
-        const task = currentTasks[i];
-        if (task.status !== 'pending' && task.status !== 'failed') continue;
+    try {
+      // Continuously process until no pending items remain in the queue
+      while (true) {
+        const nextTask = tasksRef.current.find((t) => t.status === 'pending');
+        if (!nextTask) {
+          break;
+        }
 
         // 1. Mark current file as uploading to Supabase
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === task.id
-              ? { ...t, status: 'uploading', error: undefined }
+        setTasks((prev) => {
+          const updated = prev.map((t) =>
+            t.id === nextTask.id
+              ? { ...t, status: 'uploading' as const, error: undefined }
               : t,
-          ),
-        );
+          );
+          tasksRef.current = updated;
+          return updated;
+        });
 
         try {
           // Direct browser upload to Supabase Storage
-          const uploadResult = await uploadInvoiceFile(task.file);
+          const uploadResult = await uploadInvoiceFile(nextTask.file);
 
           // 2. Mark extracting with Vision LLM
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === task.id ? { ...t, status: 'extracting' } : t,
-            ),
-          );
+          setTasks((prev) => {
+            const updated = prev.map((t) =>
+              t.id === nextTask.id ? { ...t, status: 'extracting' as const } : t,
+            );
+            tasksRef.current = updated;
+            return updated;
+          });
 
           // Backend API call: triggers synchronous Vision LLM extraction
           const extractedInvoice = await api.createAndExtractInvoice({
@@ -88,36 +97,40 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
           });
 
           // 3. Mark completed
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === task.id
+          setTasks((prev) => {
+            const updated = prev.map((t) =>
+              t.id === nextTask.id
                 ? {
-                    ...t,
-                    status: 'completed',
-                    invoice: extractedInvoice,
-                  }
+                  ...t,
+                  status: 'completed' as const,
+                  invoice: extractedInvoice,
+                }
                 : t,
-            ),
-          );
+            );
+            tasksRef.current = updated;
+            return updated;
+          });
 
           // Notify parent dashboard immediately as each file finishes
           onUploadSuccess();
         } catch (err: any) {
-          console.error(`Failed processing ${task.file.name}:`, err);
-          setTasks((prev) =>
-            prev.map((t) =>
-              t.id === task.id
+          console.error(`Failed processing ${nextTask.file.name}:`, err);
+          setTasks((prev) => {
+            const updated = prev.map((t) =>
+              t.id === nextTask.id
                 ? {
-                    ...t,
-                    status: 'failed',
-                    error: err.message || 'Processing failed',
-                  }
+                  ...t,
+                  status: 'failed' as const,
+                  error: err.message || 'Processing failed',
+                }
                 : t,
-            ),
-          );
+            );
+            tasksRef.current = updated;
+            return updated;
+          });
         }
       }
-
+    } finally {
       processingRef.current = false;
       setIsProcessing(false);
 
@@ -127,16 +140,19 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
       }
       autoClearTimeoutRef.current = setTimeout(() => {
         setTasks((prev) => {
-          const allCompleted = prev.length > 0 && prev.every((t) => t.status === 'completed');
+          const allCompleted =
+            prev.length > 0 && prev.every((t) => t.status === 'completed');
           if (allCompleted) {
+            tasksRef.current = [];
             return [];
           }
-          return prev.filter((t) => t.status !== 'completed');
+          const remaining = prev.filter((t) => t.status !== 'completed');
+          tasksRef.current = remaining;
+          return remaining;
         });
       }, 2500);
-    },
-    [onUploadSuccess],
-  );
+    }
+  }, [onUploadSuccess]);
 
   const handleFiles = (files: FileList | File[]) => {
     if (autoClearTimeoutRef.current) {
@@ -164,18 +180,30 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
 
     setTasks((prev) => {
       const updated = [...prev, ...newTasks];
-      // Automatically and immediately start sequential processing
-      setTimeout(() => processQueue(updated), 50);
+      tasksRef.current = updated;
       return updated;
     });
+
+    // If queue is idle, kick off processing; if already running, the loop will seamlessly consume the new tasks
+    setTimeout(() => {
+      processQueue();
+    }, 50);
   };
 
   const removeTask = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+    setTasks((prev) => {
+      const remaining = prev.filter((t) => t.id !== id);
+      tasksRef.current = remaining;
+      return remaining;
+    });
   };
 
   const clearCompleted = () => {
-    setTasks((prev) => prev.filter((t) => t.status !== 'completed'));
+    setTasks((prev) => {
+      const remaining = prev.filter((t) => t.status !== 'completed');
+      tasksRef.current = remaining;
+      return remaining;
+    });
   };
 
   const retryFailed = () => {
@@ -185,11 +213,16 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
     }
     setTasks((prev) => {
       const resetTasks = prev.map((t) =>
-        t.status === 'failed' ? { ...t, status: 'pending' as const, error: undefined } : t,
+        t.status === 'failed'
+          ? { ...t, status: 'pending' as const, error: undefined }
+          : t,
       );
-      setTimeout(() => processQueue(resetTasks), 50);
+      tasksRef.current = resetTasks;
       return resetTasks;
     });
+    setTimeout(() => {
+      processQueue();
+    }, 50);
   };
 
   const completedCount = tasks.filter((t) => t.status === 'completed').length;
@@ -204,9 +237,6 @@ export const InvoiceUploader: React.FC<InvoiceUploaderProps> = ({
           <UploadCloud className="text-primary" size={20} />
           <h2>Instant Ingestion & Sequential Extraction</h2>
         </div>
-        <span className="card-header-badge">
-          Direct Supabase Upload • One-by-One Processing
-        </span>
       </div>
 
       <div

@@ -33,6 +33,16 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
     'all' | 'extracted' | 'registered' | 'issues'
   >('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [reExtractingId, setReExtractingId] = useState<string | null>(null);
+
+  const handleReExtractClick = async (id: string) => {
+    setReExtractingId(id);
+    try {
+      await onReExtract(id);
+    } finally {
+      setReExtractingId(null);
+    }
+  };
 
   const safeInvoices = Array.isArray(invoices) ? invoices : [];
 
@@ -264,6 +274,23 @@ export const InvoiceTable: React.FC<InvoiceTableProps> = ({
                           >
                             <FileCheck size={14} />
                             <span>Review & Register</span>
+                          </button>
+                        ) : inv.status === 'EXTRACTION_FAILED' ? (
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => handleReExtractClick(inv.id)}
+                            disabled={reExtractingId === inv.id}
+                            title="Retry AI Extraction"
+                          >
+                            <RefreshCw
+                              size={14}
+                              className={reExtractingId === inv.id ? 'spin' : ''}
+                            />
+                            <span>
+                              {reExtractingId === inv.id
+                                ? 'Extracting...'
+                                : 'Retry Extraction'}
+                            </span>
                           </button>
                         ) : (
                           <button

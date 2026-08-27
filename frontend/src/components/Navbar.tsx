@@ -3,22 +3,16 @@
 import React from 'react';
 import {
   FileSpreadsheet,
-  Activity,
   RefreshCw,
   Sparkles,
-  Server,
 } from 'lucide-react';
 
 interface NavbarProps {
-  apiStatus: 'healthy' | 'error' | 'loading';
-  registeredCount: number;
   onRefresh: () => void;
   isRefreshing: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
-  apiStatus,
-  registeredCount,
   onRefresh,
   isRefreshing,
 }) => {

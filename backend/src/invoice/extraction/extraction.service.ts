@@ -19,7 +19,7 @@ export class ExtractionService {
 
   /**
    * Generates a signed Supabase URL and passes it directly to the Vision LLM.
-   * The backend never downloads the file binary — the LLM fetches it directly from the signed URL.
+   * Includes automatic retry logic: if the initial extraction fails, it retries once more.
    */
   async extractInvoiceData(invoiceId: string): Promise<Invoice> {
     const invoice = await this.invoiceRepository.findOne({
@@ -30,41 +30,61 @@ export class ExtractionService {
       throw new NotFoundException(`Invoice with ID ${invoiceId} not found`);
     }
 
-    try {
-      this.logger.log(
-        `Starting direct-URL extraction for invoice ID: ${invoiceId} (${invoice.fileName})`,
-      );
+    invoice.status = InvoiceStatus.PROCESSING;
+    await this.invoiceRepository.save(invoice);
 
-      invoice.status = InvoiceStatus.PROCESSING;
-      await this.invoiceRepository.save(invoice);
+    const maxAttempts = 2;
+    let lastError: any = null;
 
-      // 1. Generate temporary Supabase signed URL
-      const signedUrl = await this.storageService.getSignedUrl(
-        invoice.storagePath,
-        3600,
-      );
-
-      // 2. Pass signed URL directly to the Vision LLM (LLM fetches the file itself)
-      const extractedData: ExtractedInvoiceData =
-        await this.llmService.extractInvoiceFromDocument(
-          signedUrl,
-          invoice.mimeType,
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        this.logger.log(
+          `Starting direct-URL extraction for invoice ID: ${invoiceId} (${invoice.fileName}) [Attempt ${attempt}/${maxAttempts}]`,
         );
 
-      invoice.extractedData = extractedData;
-      invoice.status = InvoiceStatus.EXTRACTED;
-      invoice.errorMessage = null;
+        // 1. Generate temporary Supabase signed URL
+        const signedUrl = await this.storageService.getSignedUrl(
+          invoice.storagePath,
+          3600,
+        );
 
-      const savedInvoice = await this.invoiceRepository.save(invoice);
-      this.logger.log(`Extraction succeeded for invoice ID: ${invoiceId}`);
-      return savedInvoice;
-    } catch (error: any) {
-      this.logger.error(
-        `Extraction failed for invoice ID ${invoiceId}: ${error.message}`,
-      );
-      invoice.status = InvoiceStatus.EXTRACTION_FAILED;
-      invoice.errorMessage = error.message || 'LLM Extraction failed';
-      return await this.invoiceRepository.save(invoice);
+        // 2. Pass signed URL directly to the Vision LLM (LLM fetches the file itself)
+        const extractedData: ExtractedInvoiceData =
+          await this.llmService.extractInvoiceFromDocument(
+            signedUrl,
+            invoice.mimeType,
+          );
+
+        invoice.extractedData = extractedData;
+        invoice.status = InvoiceStatus.EXTRACTED;
+        invoice.errorMessage = null;
+
+        const savedInvoice = await this.invoiceRepository.save(invoice);
+        this.logger.log(
+          `Extraction succeeded on attempt ${attempt} for invoice ID: ${invoiceId}`,
+        );
+        return savedInvoice;
+      } catch (error: any) {
+        lastError = error;
+        this.logger.warn(
+          `Extraction attempt ${attempt}/${maxAttempts} failed for invoice ${invoiceId}: ${error.message}`,
+        );
+
+        if (attempt < maxAttempts) {
+          this.logger.log(
+            `Retrying extraction for invoice ID: ${invoiceId} in 1500ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+      }
     }
+
+    // If all retry attempts fail:
+    this.logger.error(
+      `All ${maxAttempts} extraction attempts failed for invoice ID ${invoiceId}: ${lastError?.message}`,
+    );
+    invoice.status = InvoiceStatus.EXTRACTION_FAILED;
+    invoice.errorMessage = lastError?.message || 'LLM Extraction failed after retry';
+    return await this.invoiceRepository.save(invoice);
   }
 }
